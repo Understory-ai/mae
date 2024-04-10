@@ -31,6 +31,8 @@ def parse_args():
 
 
 def get_shared_folder() -> Path:
+    return Path("/home/ella_understory_ai/deep/mae/exp_1")
+
     user = os.getenv("USER")
     if Path("/checkpoint/").is_dir():
         p = Path(f"/checkpoint/{user}/experiments")

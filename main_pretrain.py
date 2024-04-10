@@ -20,7 +20,7 @@ import torch
 import torch.backends.cudnn as cudnn
 from torch.utils.tensorboard import SummaryWriter
 import torchvision.transforms as transforms
-import torchvision.datasets as datasets
+# import torchvision.datasets as datasets
 
 import timm
 
@@ -33,6 +33,7 @@ from util.misc import NativeScalerWithGradNormCount as NativeScaler
 import models_mae
 
 from engine_pretrain import train_one_epoch
+from geospatial_fm.datasets import GeospatialDataset
 
 
 def get_args_parser():
@@ -125,7 +126,80 @@ def main(args):
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
-    dataset_train = datasets.ImageFolder(os.path.join(args.data_path, 'train'), transform=transform_train)
+    
+    # dataset_train = datasets.ImageFolder(os.path.join(args.data_path, 'train'), transform=transform_train)
+    ##
+    # change Imagefolder to geospatial dataset from hls that use tiff
+    tile_size = 224
+    orig_nsize = 512
+    crop_size = (tile_size, tile_size)
+    bands = [0, 1, 2, 3, 4, 5]
+    num_frames=1
+
+    img_norm_cfg = dict(
+        means=[
+            494.905781,
+            815.239594,
+            924.335066,
+            2968.881459,
+            2634.621962,
+            1739.579917,
+            494.905781,
+            815.239594,
+            924.335066,
+            2968.881459,
+            2634.621962,
+            1739.579917,
+            494.905781,
+            815.239594,
+            924.335066,
+            2968.881459,
+            2634.621962,
+            1739.579917,
+        ],
+
+        stds=[
+            284.925432,
+            357.84876,
+            575.566823,
+            896.601013,
+            951.900334,
+            921.407808,
+            284.925432,
+            357.84876,
+            575.566823,
+            896.601013,
+            951.900334,
+            921.407808,
+            284.925432,
+            357.84876,
+            575.566823,
+            896.601013,
+            951.900334,
+            921.407808,
+        ],
+    )
+    train_pipeline = [
+        dict(type="LoadGeospatialImageFromFile", to_float32=True),
+        dict(type="LoadGeospatialAnnotations", reduce_zero_label=True),
+        dict(type="RandomFlip", prob=0.5),
+        dict(type="ToTensor", keys=["img", "gt_semantic_seg"]),
+        # to channels first
+        dict(type="TorchPermute", keys=["img"], order=(2, 0, 1)),
+        dict(type="TorchNormalize", **img_norm_cfg),
+        dict(type="TorchRandomCrop", crop_size=crop_size),
+        dict(
+            type="Reshape",
+            keys=["img"],
+            new_shape=(len(bands), num_frames, tile_size, tile_size),
+        ),
+        dict(type="Reshape", keys=["gt_semantic_seg"], new_shape=(1, tile_size, tile_size)),
+        dict(type="CastTensor", keys=["gt_semantic_seg"], new_type="torch.LongTensor"),
+        dict(type="Collect", keys=["img", "gt_semantic_seg"]),
+    ]
+
+
+    dataset_train= GeospatialDataset(pipeline=train_pipeline, img_dir=os.path.join(args.data_path, 'train'))
     print(dataset_train)
 
     if True:  # args.distributed:
